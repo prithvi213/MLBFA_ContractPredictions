@@ -40,6 +40,13 @@ previous_free_agents['AGE'] = previous_free_agents['AGE'].astype(int)
 print(previous_free_agents)
 
 current_free_agents = pd.read_csv('data/export_table#table_11_1_2024.csv')
+current_free_agents = current_free_agents.drop(columns=['YOE', 'ARMBAT/THROW', 'TEAM', 'PREV AAV', 'TYPE', 'MARKET VALUE', 'WAR'])
+current_free_agents['AGE'] = pd.to_numeric(current_free_agents['AGE'], errors='coerce')
+current_free_agents['AGE'] = np.round(current_free_agents['AGE'] + 0.2)
+current_free_agents['AGE'] = current_free_agents['AGE'].astype(int)
+
+
+print(current_free_agents)
 player_names = list(current_free_agents['PLAYER (50)'])
 st.title("MLB Free Agent Contract Predictor")
 
