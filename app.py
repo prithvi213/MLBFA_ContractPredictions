@@ -8,7 +8,36 @@ import re
 import sqlite3
 
 conn = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/previous-fa-contracts.db')
+conn2 = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/current-fa-contracts.db')
 conn.cursor()
+conn2.cursor()
+
+previous_free_agents = pd.read_csv('data/current-free-agents.csv')
+batting_stats = pd.read_csv('data/batting-leaderboards.csv')
+pitching_stats = pd.read_csv('data/basic-pitching-stats.csv')
+advanced_stats = pd.read_csv('data/advanced-pitching-stats.csv')
+pitching_stats = pitching_stats.merge(advanced_stats, on=['Season', 'Name', 'Team'], how='left', suffixes=('', '_dup'))
+pitching_stats = pitching_stats.loc[:, ~pitching_stats.columns.str.endswith('_dup')]
+current_free_agents = pd.read_csv('data/2024_25_free_agents.csv')
+
+# League average MLB Salary in millions to help adjust for inflation
+lg_avg = {
+    2009: 3,
+    2010: 3.01,
+    2011: 3.1,
+    2012: 3.21,
+    2013: 3.39,
+    2014: 3.69,
+    2015: 3.84,
+    2016: 4.38,
+    2017: 4.45,
+    2018: 4.41,
+    2019: 4.38,
+    2020: 4.43,
+    2021: 4.17,
+    2022: 4.41,
+    2023: 4.9
+}
 
 # Split Position by Slash Token
 def split_positions(position):
@@ -107,32 +136,6 @@ def calculate_pitching_stats(pitching_stats, player, year):
     
     return pd.Series([tot_GP, tot_GS, tot_IP, tot_PITCHWAR, avg_SIERA, avg_FIP, avg_PITCHWAR, avg_K_PER_9, avg_K_PER_BB, avg_K_MINUS_BB, avg_K_RATE, avg_SAVES])
 
-# League average MLB Salary in millions to help adjust for inflation
-lg_avg = {
-    2009: 3,
-    2010: 3.01,
-    2011: 3.1,
-    2012: 3.21,
-    2013: 3.39,
-    2014: 3.69,
-    2015: 3.84,
-    2016: 4.38,
-    2017: 4.45,
-    2018: 4.41,
-    2019: 4.38,
-    2020: 4.43,
-    2021: 4.17,
-    2022: 4.41,
-    2023: 4.9
-}
-
-previous_free_agents = pd.read_csv('data/current-free-agents.csv')
-batting_stats = pd.read_csv('data/batting-leaderboards.csv')
-pitching_stats = pd.read_csv('data/basic-pitching-stats.csv')
-advanced_stats = pd.read_csv('data/advanced-pitching-stats.csv')
-pitching_stats = pitching_stats.merge(advanced_stats, on=['Season', 'Name', 'Team'], how='left', suffixes=('', '_dup'))
-pitching_stats = pitching_stats.loc[:, ~pitching_stats.columns.str.endswith('_dup')]
-
 # Cleaning the training dataset
 previous_free_agents = previous_free_agents.drop(0)
 previous_free_agents = previous_free_agents.drop(columns=['TEAMTO', 'WAR', 'YOE', 'ARMBAT/THROW'])
@@ -209,11 +212,38 @@ pitcher_free_agents['TOT_GS (2 Yrs)'] = pitcher_free_agents['TOT_GS (2 Yrs)'].as
 print(batter_free_agents)
 print(pitcher_free_agents)
 
-current_free_agents = pd.read_csv('data/2024_25_free_agents.csv')
 current_free_agents = current_free_agents.drop(columns=['YOE', 'ARMBAT/THROW', 'TEAM', 'PREV AAV', 'TYPE', 'MARKET VALUE', 'WAR'])
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].astype('string')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].replace({'é': 'e', 'á': 'a', 'ó': 'o', 'ú': 'u', 'í': 'i', 'Á': 'A', 'ñ': 'n'})
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace(r'\.(.)\.', r'\1', regex=True)
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace(' Jr.', '')
+current_free_agents['POS'] = current_free_agents['POS'].apply(lambda pos: str(pos))
 current_free_agents['AGE'] = pd.to_numeric(current_free_agents['AGE'], errors='coerce')
 current_free_agents['AGE'] = np.round(current_free_agents['AGE'] + 0.2)
 current_free_agents['AGE'] = current_free_agents['AGE'].astype(int)
+print(current_free_agents)
+
+current_free_agents.to_sql('curr_free_agents', conn2, if_exists='replace', index=False)
+current_batter_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS NOT IN ('SP', 'RP')", conn2)
+current_pitcher_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS IN ('SP', 'RP')", conn2)
+
+current_batter_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = current_batter_agents.apply(
+    lambda row: calculate_batting_stats(batting_stats, row['PLAYER (198)'], 2024), axis=1
+)
+
+current_batter_agents['TOT_GP (2 Yrs)'] = current_batter_agents['TOT_GP (2 Yrs)'].astype(int)
+current_batter_agents['TOT_PA (2 Yrs)'] = current_batter_agents['TOT_PA (2 Yrs)'].astype(int)
+current_batter_agents['AVG_wRC+ (2 Yrs)'] = current_batter_agents['AVG_wRC+ (2 Yrs)'].astype(int)
+
+current_pitcher_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = current_pitcher_agents.apply(
+    lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (198)'], 2024), axis=1
+)
+
+current_pitcher_agents['TOT_GP (2 Yrs)'] = current_pitcher_agents['TOT_GP (2 Yrs)'].astype(int)
+current_pitcher_agents['TOT_GS (2 Yrs)'] = current_pitcher_agents['TOT_GS (2 Yrs)'].astype(int)
+
+print(current_batter_agents)
+print(current_pitcher_agents)
 
 player_names = list(current_free_agents['PLAYER (198)'])
 
