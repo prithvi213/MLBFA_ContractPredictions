@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-from pybaseball import fg_batting_data, fg_pitching_data
 import numpy as np
 import re
 import sqlite3
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import xgboost as xgb
+from sklearn.metrics import mean_squared_error
+from datetime import datetime
+from pybaseball import playerid_lookup
 
-conn = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/previous-fa-contracts.db')
-conn2 = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/current-fa-contracts.db')
+conn = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/fa-contracts.db')
 conn.cursor()
-conn2.cursor()
 
 previous_free_agents = pd.read_csv('data/current-free-agents.csv')
 batting_stats = pd.read_csv('data/batting-leaderboards.csv')
@@ -83,20 +84,24 @@ def calculate_batting_stats(batting_stats, player, year):
 
 def calculate_pitching_stats(pitching_stats, player, year):
     player_stats = pitching_stats[(pitching_stats['Name'] == player) & (pitching_stats['Season'].isin([year - 2, year - 1]))]
-    player_stats = player_stats[['Season', 'G', 'GS', 'IP', 'K/9', 'BB/9', 'WAR', 'FIP', 'SIERA', 'K%', 'K-BB%', 'SV']]
+    player_stats = player_stats[['Season', 'G', 'GS', 'IP', 'K/9', 'BB/9', 'WAR', 'FIP', 'SIERA', 'K%', 'K-BB%', 'SV', 'PlayerId']]
 
     if len(player_stats) == 0:
         return pd.Series([0 for i in range(11)])
+    
+    if player == 'Luis Garcia':
+        player_stats = player_stats[player_stats['PlayerId'] == 6984]
 
     player_stats.index = [0] if len(player_stats) == 1 else [0, 1]
+
     index_2020 = player_stats.index[player_stats['Season'] == 2020].tolist()
     player_stats['Decimal'] = player_stats['IP'] - np.floor(player_stats['IP'])
-    player_stats['IP'] = round(np.floor(player_stats['IP']) + (player_stats['Decimal'] / 0.3), 1)
+    player_stats['IP'] = np.floor(player_stats['IP']) + (player_stats['Decimal'] / 0.3)
 
     if len(index_2020) > 0:
         player_stats.at[index_2020[0], 'G'] = round(player_stats.at[index_2020[0], 'G'] * 162 / 60)
         player_stats.at[index_2020[0], 'GS'] = round(player_stats.at[index_2020[0], 'GS'] * 162 / 60)
-        player_stats.at[index_2020[0], 'IP'] = round(player_stats.at[index_2020[0], 'IP'] * 162 / 60, 1)
+        player_stats.at[index_2020[0], 'IP'] = round(player_stats.at[index_2020[0], 'IP'] * 162 / 60)
         player_stats.at[index_2020[0], 'SV'] = round(player_stats.at[index_2020[0], 'SV'] * 162 / 60)
         player_stats.at[index_2020[0], 'WAR'] = round(player_stats.at[index_2020[0], 'WAR'] * 162 / 60)
     
@@ -156,7 +161,13 @@ previous_free_agents = previous_free_agents[(previous_free_agents['YRS'] > 0) &
 previous_free_agents = previous_free_agents.drop(columns=['TEAMFROM'])
 
 previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].astype('string')
-previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].replace({'é': 'e', 'á': 'a', 'ó': 'o', 'ú': 'u', 'í': 'i', 'Á': 'A', 'ñ': 'n'})
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('Á', 'A')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('á', 'a')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('é', 'e')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('í', 'i')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('ó', 'o')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('ú', 'u')
+previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace('ñ', 'n')
 previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace(r'\.(.)\.', r'\1', regex=True)
 previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].str.replace(' Jr.', '')
 
@@ -174,30 +185,47 @@ previous_free_agents['AGE'] = previous_free_agents['AGE'].astype(int)
 
 previous_free_agents['VALUE'] = previous_free_agents['VALUE'] * (4.98 / previous_free_agents['YEAR'].apply(lambda c: lg_avg.get(c - 1)))
 previous_free_agents['VALUE'] = np.round(previous_free_agents['VALUE'])
-previous_free_agents['VALUE'] = previous_free_agents['VALUE'].astype(int)
+previous_free_agents['VALUE'] = previous_free_agents['VALUE'].astype(float)
 
 previous_free_agents['AAV'] = previous_free_agents['VALUE'] / previous_free_agents['YRS']
 previous_free_agents['AAV'] = np.round(previous_free_agents['AAV'])
-previous_free_agents['AAV'] = previous_free_agents['AAV'].astype(int)
+previous_free_agents['AAV'] = previous_free_agents['AAV'].astype(float)
 
 batting_stats['Name'] = batting_stats['Name'].astype('string')
-batting_stats['Name'] = batting_stats['Name'].replace({'é': 'e', 'á': 'a', 'ó': 'o', 'ú': 'u', 'í': 'i', 'Á': 'A', 'ñ': 'n'})
+batting_stats['Name'] = batting_stats['Name'].str.replace('Á', 'A')
+batting_stats['Name'] = batting_stats['Name'].str.replace('á', 'a')
+batting_stats['Name'] = batting_stats['Name'].str.replace('é', 'e')
+batting_stats['Name'] = batting_stats['Name'].str.replace('í', 'i')
+batting_stats['Name'] = batting_stats['Name'].str.replace('ó', 'o')
+batting_stats['Name'] = batting_stats['Name'].str.replace('ú', 'u')
+batting_stats['Name'] = batting_stats['Name'].str.replace('ñ', 'n')
 batting_stats['Name'] = batting_stats['Name'].str.replace(' Jr.', '')
 batting_stats['Name'] = batting_stats['Name'].str.replace(r'\.(.)\.', r'\1', regex=True)
 
 pitching_stats['Name'] = pitching_stats['Name'].astype('string')
-pitching_stats['Name'] = pitching_stats['Name'].replace({'é': 'e', 'á': 'a', 'ó': 'o', 'ú': 'u', 'í': 'i', 'Á': 'A', 'ñ': 'n'})
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('Á', 'A')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('á', 'a')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('é', 'e')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('í', 'i')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('ó', 'o')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('ú', 'u')
+pitching_stats['Name'] = pitching_stats['Name'].str.replace('ñ', 'n')
 pitching_stats['Name'] = pitching_stats['Name'].str.replace(' Jr.', '')
 pitching_stats['Name'] = pitching_stats['Name'].str.replace(r'\.(.)\.', r'\1', regex=True)
 
 previous_free_agents.to_sql('prev_free_agents', conn, if_exists='replace', index=False)
 batter_free_agents = pd.read_sql_query("SELECT * FROM prev_free_agents WHERE POS NOT IN ('SP', 'RP')", conn)
-pitcher_free_agents = pd.read_sql_query("SELECT * FROM prev_free_agents WHERE POS IN ('SP', 'RP')", conn)
+pitcher_free_agents = pd.read_sql_query("SELECT * FROM prev_free_agents WHERE POS IN ('SP', 'RP', 'TWP')", conn)
 
 batter_free_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = batter_free_agents.apply(
     lambda row: calculate_batting_stats(batting_stats, row['PLAYER (2000)'], row['YEAR']), axis=1
 )
 
+value = batter_free_agents.at[0, 'VALUE']
+batter_free_agents.at[0, 'VALUE'] = (0.5 * ((10.2 / 18.2) + (6.5 / 8.9))) * value
+batter_free_agents.at[0, 'AAV'] = batter_free_agents.at[0, 'VALUE'] / batter_free_agents.at[0, 'YRS']
+batter_free_agents['VALUE'] = batter_free_agents['VALUE'].astype(int)
+batter_free_agents['AAV'] = batter_free_agents['AAV'].astype(int)
 batter_free_agents['TOT_GP (2 Yrs)'] = batter_free_agents['TOT_GP (2 Yrs)'].astype(int)
 batter_free_agents['TOT_PA (2 Yrs)'] = batter_free_agents['TOT_PA (2 Yrs)'].astype(int)
 batter_free_agents['AVG_wRC+ (2 Yrs)'] = batter_free_agents['AVG_wRC+ (2 Yrs)'].astype(int)
@@ -206,44 +234,122 @@ pitcher_free_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_
     lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (2000)'], row['YEAR']), axis=1
 )
 
+value = pitcher_free_agents.at[0, 'VALUE']
+pitcher_free_agents.at[0, 'VALUE'] = (0.5 * ((8.0 / 18.2) + (2.4 / 8.9))) * value
+pitcher_free_agents.at[0, 'AAV'] = pitcher_free_agents.at[0, 'VALUE'] / pitcher_free_agents.at[0, 'YRS']
+pitcher_free_agents['VALUE'] = pitcher_free_agents['VALUE'].astype(int)
+pitcher_free_agents['AAV'] = pitcher_free_agents['AAV'].astype(int)
 pitcher_free_agents['TOT_GP (2 Yrs)'] = pitcher_free_agents['TOT_GP (2 Yrs)'].astype(int)
 pitcher_free_agents['TOT_GS (2 Yrs)'] = pitcher_free_agents['TOT_GS (2 Yrs)'].astype(int)
+pitcher_free_agents['AVG_SAVES (2 Yrs)'].fillna(0.0, inplace=True)
+pitcher_free_agents['AVG_SAVES (2 Yrs)'] = pitcher_free_agents['AVG_SAVES (2 Yrs)'].astype(int)
 
-print(batter_free_agents)
-print(pitcher_free_agents)
+#print(batter_free_agents)
+#print(pitcher_free_agents)
 
 current_free_agents = current_free_agents.drop(columns=['YOE', 'ARMBAT/THROW', 'TEAM', 'PREV AAV', 'TYPE', 'MARKET VALUE', 'WAR'])
 current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].astype('string')
-current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].replace({'é': 'e', 'á': 'a', 'ó': 'o', 'ú': 'u', 'í': 'i', 'Á': 'A', 'ñ': 'n'})
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('Á', 'A')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('á', 'a')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('é', 'e')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('í', 'i')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('ó', 'o')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('ú', 'u')
+current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace('ñ', 'n')
 current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace(r'\.(.)\.', r'\1', regex=True)
 current_free_agents['PLAYER (198)'] = current_free_agents['PLAYER (198)'].str.replace(' Jr.', '')
 current_free_agents['POS'] = current_free_agents['POS'].apply(lambda pos: str(pos))
 current_free_agents['AGE'] = pd.to_numeric(current_free_agents['AGE'], errors='coerce')
 current_free_agents['AGE'] = np.round(current_free_agents['AGE'] + 0.2)
 current_free_agents['AGE'] = current_free_agents['AGE'].astype(int)
-print(current_free_agents)
 
-current_free_agents.to_sql('curr_free_agents', conn2, if_exists='replace', index=False)
-current_batter_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS NOT IN ('SP', 'RP')", conn2)
-current_pitcher_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS IN ('SP', 'RP')", conn2)
+current_free_agents.to_sql('curr_free_agents', conn, if_exists='replace', index=False)
+current_batter_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS NOT IN ('SP', 'RP')", conn)
+current_batter_agents['YEAR'] = 2025
+current_pitcher_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS IN ('SP', 'RP')", conn)
+current_pitcher_agents['YEAR'] = 2025
 
 current_batter_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = current_batter_agents.apply(
-    lambda row: calculate_batting_stats(batting_stats, row['PLAYER (198)'], 2024), axis=1
+    lambda row: calculate_batting_stats(batting_stats, row['PLAYER (198)'], 2025), axis=1
 )
 
 current_batter_agents['TOT_GP (2 Yrs)'] = current_batter_agents['TOT_GP (2 Yrs)'].astype(int)
 current_batter_agents['TOT_PA (2 Yrs)'] = current_batter_agents['TOT_PA (2 Yrs)'].astype(int)
 current_batter_agents['AVG_wRC+ (2 Yrs)'] = current_batter_agents['AVG_wRC+ (2 Yrs)'].astype(int)
 
+
 current_pitcher_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = current_pitcher_agents.apply(
-    lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (198)'], 2024), axis=1
+    lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (198)'], 2025), axis=1
 )
 
 current_pitcher_agents['TOT_GP (2 Yrs)'] = current_pitcher_agents['TOT_GP (2 Yrs)'].astype(int)
 current_pitcher_agents['TOT_GS (2 Yrs)'] = current_pitcher_agents['TOT_GS (2 Yrs)'].astype(int)
+current_pitcher_agents['AVG_SAVES (2 Yrs)'].fillna(0.0, inplace=True)
+current_pitcher_agents = current_pitcher_agents[current_pitcher_agents['TOT_GP (2 Yrs)'] > 0]
+current_pitcher_agents['AVG_SAVES (2 Yrs)'] = current_pitcher_agents['AVG_SAVES (2 Yrs)'].astype(int)
 
-print(current_batter_agents)
-print(current_pitcher_agents)
+#print(previous_free_agents.head(50))
+#print(batter_free_agents.head(50))
+#print(pitcher_free_agents.head(50))
+#print(current_batter_agents.head(50))
+print(current_pitcher_agents.head(50))
+#print(current_batter_agents.tail(50))
+print(current_pitcher_agents.tail(50))
+#print(current_batter_agents.head(50))
+
+batter_free_agents = batter_free_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+current_batter_agents = current_batter_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+
+starter_free_agents = pitcher_free_agents[pitcher_free_agents['POS'] == 'SP']
+starter_free_agents = starter_free_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+current_starter_agents = current_pitcher_agents[current_pitcher_agents['POS'] == 'SP']
+current_starter_agents = current_starter_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+
+X_train_bat = batter_free_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']]
+y_train_bat = batter_free_agents[['YRS', 'VALUE']]
+X_test_bat = current_batter_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']]
+
+X_train_pitch = starter_free_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
+y_train_pitch = starter_free_agents[['YRS', 'VALUE']]
+X_test_pitch = current_starter_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
+
+"""model_1 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
+model_1.fit(X_train_bat, y_train_bat['YRS'])
+
+# Make predictions on the test set
+predictions_1 = model_1.predict(X_test_bat)
+
+# Train the model for target_column_2
+model_2 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
+model_2.fit(X_train_bat, y_train_bat['VALUE'])
+
+# Make predictions on the test set
+predictions_2 = model_2.predict(X_test_bat)
+
+# Combine the predictions
+predictions = pd.DataFrame({'YRS': predictions_1, 'VALUE': predictions_2})"""
+
+model_3 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
+model_3.fit(X_train_pitch, y_train_pitch['YRS'])
+
+# Make predictions on the test set
+predictions_3 = model_3.predict(X_test_pitch)
+
+# Train the model for target_column_2
+model_4 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
+model_4.fit(X_train_pitch, y_train_pitch['VALUE'])
+
+# Make predictions on the test set
+predictions_4 = model_4.predict(X_test_pitch)
+
+# Combine the predictions
+predictions = pd.DataFrame({'YRS': predictions_3, 'VALUE': predictions_4})
+
+#for idx, (v1, v2) in enumerate(zip(predictions_1, predictions_2)):
+#    print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), round(v2))
+
+for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
+    print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), round(v4))
 
 player_names = list(current_free_agents['PLAYER (198)'])
 
