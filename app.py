@@ -23,6 +23,8 @@ pitching_stats = pitching_stats.merge(advanced_stats, on=['Season', 'Name', 'Tea
 pitching_stats = pitching_stats.loc[:, ~pitching_stats.columns.str.endswith('_dup')]
 current_free_agents = pd.read_csv('data/2024_25_free_agents.csv')
 
+w1, w2 = 0.25, 0.75
+
 # League average MLB Salary in millions to help adjust for inflation
 lg_avg = {
     2009: 3,
@@ -42,6 +44,26 @@ lg_avg = {
     2023: 4.9
 }
 
+# Home Run Ratio
+total_hrs = {
+    2009: 5042,
+    2010: 4613,
+    2011: 4552,
+    2012: 4934,
+    2013: 4661,
+    2014: 4186,
+    2015: 4909,
+    2016: 5610,
+    2017: 6105,
+    2018: 5585,
+    2019: 6776,
+    2020: 6218,
+    2021: 5940,
+    2022: 5215,
+    2023: 5868,
+    2024: 5453
+}
+
 # Split Position by Slash Token
 def split_positions(position):
     positions = re.split(r'\/', position[0])
@@ -52,7 +74,7 @@ def filter_positions(position):
 
 def calculate_batting_stats(batting_stats, player, year):
     player_stats = batting_stats[(batting_stats['Name'] == player) & (batting_stats['Season'].isin([year - 2, year - 1]))]
-    player_stats = player_stats[['Season', 'G', 'PA', 'wRC+', 'Off', 'Def', 'WAR']]
+    player_stats = player_stats[['Season', 'G', 'PA', 'HR', 'wRC+', 'Off', 'Def', 'WAR']]
 
     if len(player_stats) == 0:
         return pd.Series([0 for i in range(7)])
@@ -63,6 +85,7 @@ def calculate_batting_stats(batting_stats, player, year):
     if len(index_2020) > 0:
         player_stats.at[index_2020[0], 'G'] = round(player_stats.at[index_2020[0], 'G'] * 162 / 60)
         player_stats.at[index_2020[0], 'PA'] = round(player_stats.at[index_2020[0], 'PA'] * 162 / 60)
+        player_stats.at[index_2020[0], 'HR'] = round(player_stats.at[index_2020[0], 'HR'] * 162 / 60)
         player_stats.at[index_2020[0], 'Off'] = round(player_stats.at[index_2020[0], 'Off'] * 162 / 60)
         player_stats.at[index_2020[0], 'Def'] = round(player_stats.at[index_2020[0], 'Def'] * 162 / 60)
         player_stats.at[index_2020[0], 'WAR'] = round(player_stats.at[index_2020[0], 'WAR'] * 162 / 60)
@@ -72,17 +95,21 @@ def calculate_batting_stats(batting_stats, player, year):
     tot_BATWAR = round(player_stats['WAR'].sum(), 1)
 
     if len(player_stats) == 1:
+        s0 = player_stats.loc[0, 'Season']
+        avg_HR = round(player_stats.loc[0, 'HR'] * (5453 / total_hrs[s0]))
         avg_WRC_PLUS = round(player_stats.loc[0, 'wRC+'])
         avg_OFF = round(player_stats.loc[0, 'Off'], 1)
         avg_DEF = round(player_stats.loc[0, 'Def'], 1)
         avg_BATWAR = round(player_stats.loc[0, 'WAR'], 1)
     else:
-        avg_WRC_PLUS = round(((0.25*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'wRC+'])) + (0.75*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'wRC+']))) / ((0.25*(player_stats.loc[0, 'PA'])) + (0.75*(player_stats.loc[1, 'PA']))))
-        avg_OFF = round(((0.25*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Off'])) + (0.75*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Off']))) / ((0.25*(player_stats.loc[0, 'PA'])) + (0.75*(player_stats.loc[1, 'PA']))), 1)
-        avg_DEF = round(((0.25*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Def'])) + (0.75*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Def']))) / ((0.25*(player_stats.loc[0, 'PA'])) + (0.75*(player_stats.loc[1, 'PA']))), 1)
-        avg_BATWAR = round((0.25*((player_stats.loc[0, 'PA'] * player_stats.loc[0, 'WAR'])) + (0.75*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'WAR']))) / ((0.25*(player_stats.loc[0, 'PA'])) + (0.75*(player_stats.loc[1, 'PA']))), 1)
+        s0, s1 = player_stats.loc[0, 'Season'], player_stats.loc[1, 'Season']
+        avg_HR = round(((w1*(5453 / total_hrs[s0])*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'HR'])) + (w2*(5453 / total_hrs[s1])*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'HR']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))))
+        avg_WRC_PLUS = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'wRC+'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'wRC+']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))))
+        avg_OFF = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Off'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Off']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
+        avg_DEF = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Def'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Def']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
+        avg_BATWAR = round((w1*((player_stats.loc[0, 'PA'] * player_stats.loc[0, 'WAR'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'WAR']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
     
-    return pd.Series([tot_GP, tot_PA, avg_WRC_PLUS, avg_OFF, avg_DEF, tot_BATWAR, avg_BATWAR])
+    return pd.Series([tot_GP, tot_PA, avg_HR, avg_WRC_PLUS, avg_OFF, avg_DEF, tot_BATWAR, avg_BATWAR])
 
 def calculate_pitching_stats(pitching_stats, player, year):
     player_stats = pitching_stats[(pitching_stats['Name'] == player) & (pitching_stats['Season'].isin([year - 2, year - 1]))]
@@ -128,11 +155,11 @@ def calculate_pitching_stats(pitching_stats, player, year):
         avg_SAVES = round(player_stats.loc[0, 'SV'])
         avg_ERA = round(player_stats.loc[0, 'ERA'])
     else:
-        avg_ERA = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'ERA']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'ERA'])) / tot_IP, 2)
-        avg_SIERA = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'SIERA']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'SIERA'])) / tot_IP, 2)
-        avg_FIP = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'FIP']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'FIP'])) / tot_IP, 2)
-        avg_PITCHWAR = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'WAR']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'WAR'])) / tot_IP, 1)
-        avg_K_PER_9 = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K/9']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K/9'])) / tot_IP, 1)
+        avg_ERA = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'ERA'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'ERA']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 2)
+        avg_SIERA = round((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'SIERA']) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'SIERA']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 2)
+        avg_FIP = round((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'FIP']) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'FIP']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 2)
+        avg_PITCHWAR = round((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'WAR']) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'WAR']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
+        avg_K_PER_9 = round((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K/9']) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K/9']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
 
         if player_stats.loc[0, 'BB/9'] > 0 and player_stats.loc[1, 'BB/9'] > 0:
             avg_K_PER_BB = round(((player_stats.loc[0, 'IP'] * (player_stats.loc[0, 'K/9'] / player_stats.loc[0, 'BB/9'])) + (player_stats.loc[1, 'IP'] * (player_stats.loc[1, 'K/9'] / player_stats.loc[1, 'BB/9']))) / tot_IP, 1)
@@ -222,7 +249,7 @@ previous_free_agents.to_sql('prev_free_agents', conn, if_exists='replace', index
 batter_free_agents = pd.read_sql_query("SELECT * FROM prev_free_agents WHERE POS NOT IN ('SP', 'RP')", conn)
 pitcher_free_agents = pd.read_sql_query("SELECT * FROM prev_free_agents WHERE POS IN ('SP', 'RP', 'TWP')", conn)
 
-batter_free_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = batter_free_agents.apply(
+batter_free_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = batter_free_agents.apply(
     lambda row: calculate_batting_stats(batting_stats, row['PLAYER (2000)'], row['YEAR']), axis=1
 )
 
@@ -235,7 +262,7 @@ batter_free_agents['TOT_GP (2 Yrs)'] = batter_free_agents['TOT_GP (2 Yrs)'].asty
 batter_free_agents['TOT_PA (2 Yrs)'] = batter_free_agents['TOT_PA (2 Yrs)'].astype(int)
 batter_free_agents['AVG_wRC+ (2 Yrs)'] = batter_free_agents['AVG_wRC+ (2 Yrs)'].astype(int)
 
-pitcher_free_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'Avg_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = pitcher_free_agents.apply(
+pitcher_free_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = pitcher_free_agents.apply(
     lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (2000)'], row['YEAR']), axis=1
 )
 
@@ -248,6 +275,7 @@ pitcher_free_agents['TOT_GP (2 Yrs)'] = pitcher_free_agents['TOT_GP (2 Yrs)'].as
 pitcher_free_agents['TOT_GS (2 Yrs)'] = pitcher_free_agents['TOT_GS (2 Yrs)'].astype(int)
 pitcher_free_agents['AVG_SAVES (2 Yrs)'].fillna(0.0, inplace=True)
 pitcher_free_agents['AVG_SAVES (2 Yrs)'] = pitcher_free_agents['AVG_SAVES (2 Yrs)'].astype(int)
+pitcher_free_agents = pitcher_free_agents[pitcher_free_agents['PLAYER (2000)'] != 'Trevor Bauer']
 
 #print(batter_free_agents)
 #print(pitcher_free_agents)
@@ -274,7 +302,7 @@ current_batter_agents['YEAR'] = 2025
 current_pitcher_agents = pd.read_sql_query("SELECT * FROM curr_free_agents WHERE POS IN ('SP', 'RP')", conn)
 current_pitcher_agents['YEAR'] = 2025
 
-current_batter_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = current_batter_agents.apply(
+current_batter_agents[['TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']] = current_batter_agents.apply(
     lambda row: calculate_batting_stats(batting_stats, row['PLAYER (198)'], 2025), axis=1
 )
 
@@ -283,7 +311,7 @@ current_batter_agents['TOT_PA (2 Yrs)'] = current_batter_agents['TOT_PA (2 Yrs)'
 current_batter_agents['AVG_wRC+ (2 Yrs)'] = current_batter_agents['AVG_wRC+ (2 Yrs)'].astype(int)
 
 
-current_pitcher_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'Avg_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = current_pitcher_agents.apply(
+current_pitcher_agents[['TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/9 (2 Yrs)', 'AVG_K/BB (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']] = current_pitcher_agents.apply(
     lambda row: calculate_pitching_stats(pitching_stats, row['PLAYER (198)'], 2025), axis=1
 )
 
@@ -294,10 +322,10 @@ current_pitcher_agents = current_pitcher_agents[current_pitcher_agents['TOT_GP (
 current_pitcher_agents['AVG_SAVES (2 Yrs)'] = current_pitcher_agents['AVG_SAVES (2 Yrs)'].astype(int)
 
 #print(previous_free_agents.head(50))
-print(batter_free_agents.head(50))
-#print(pitcher_free_agents.head(50))
-print(current_batter_agents.head(50))
-#print(current_pitcher_agents.head(50))
+#print(batter_free_agents.head(50))
+print(pitcher_free_agents.head(50))
+#print(current_batter_agents.head(50))
+print(current_pitcher_agents.head(50))
 #print(current_batter_agents.tail(50))
 #print(current_pitcher_agents.tail(50))
 #print(current_batter_agents.head(50))
@@ -310,23 +338,20 @@ starter_free_agents = starter_free_agents.sample(frac=1, random_state=42).reset_
 current_starter_agents = current_pitcher_agents[current_pitcher_agents['POS'] == 'SP']
 current_starter_agents = current_starter_agents.sample(frac=1, random_state=42).reset_index(drop=True)
 
-X_train_bat = batter_free_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']]
-
+X_train_bat = batter_free_agents[['AGE', 'YEAR', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'AVG_WAR (2 Yrs)']]
 y_train_bat = batter_free_agents[['YRS', 'AAV']]
-X_test_bat = current_batter_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_PA (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_WAR (2 Yrs)']]
+X_test_bat = current_batter_agents[['AGE', 'YEAR', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'AVG_WAR (2 Yrs)']]
+
+
 
 conditions = [
     (X_train_bat['AGE'] < 27) & (X_train_bat['AVG_WAR (2 Yrs)'] > 5.0),
-    (X_train_bat['AGE'] < 30) & (X_train_bat['AVG_WAR (2 Yrs)'] > 4.0),
-    (X_train_bat['AGE'] > 30) & (X_train_bat['AVG_WAR (2 Yrs)'] > 3.0)
+    (X_train_bat['AGE'] < 30) & ((X_train_bat['AVG_WAR (2 Yrs)'] > 4.0) | (X_train_bat['AVG_DEF (2 Yrs)'] > 7.5)),
+    (X_train_bat['AGE'] > 30) & (X_train_bat['AVG_WAR (2 Yrs)'] > 3.0),
 ]
 
-weights = [2.5, 2.0, 1.5]
+weights = [2.5, 2.2, 1.15]
 sample_weights = np.select(conditions, weights, default=1.0)
-
-#X_train_pitch = starter_free_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
-#y_train_pitch = starter_free_agents[['YRS', 'VALUE']]
-#X_test_pitch = current_starter_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'TOT_WAR (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
 
 model_1 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
 model_1.fit(X_train_bat, y_train_bat['YRS'], sample_weight=sample_weights)
@@ -338,13 +363,13 @@ predictions_1 = model_1.predict(X_test_bat)
 
 conditions = [
     (X_train_bat['AVG_WAR (2 Yrs)'] > 5.0),
-    (X_train_bat['AGE'] < 30) & (X_train_bat['AVG_DEF (2 Yrs)'] > 7.5) & (X_train_bat['AVG_wRC+ (2 Yrs)'] > 100),
-    (X_train_bat['AVG_wRC+ (2 Yrs)'] > 125),
+    (X_train_bat['AVG_DEF (2 Yrs)'] > 7.5) & (X_train_bat['AVG_wRC+ (2 Yrs)'] > 100),
+    ((X_train_bat['AVG_wRC+ (2 Yrs)'] >= 120) | (X_train_bat['AVG_HR (2 Yrs)'] >= 25)),
     (X_train_bat['AVG_wRC+ (2 Yrs)'] < 100)
 ]
 
-weights = [2.5, 2.0, 1.5, 0.9]
-sample_weights = np.select(conditions, weights)
+weights = [2.5, 1.2, 1.35, 0.9]
+sample_weights = np.select(conditions, weights, default=1.0)
 
 # Train the model for target_column_2
 model_2 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
@@ -355,36 +380,58 @@ predictions_2 = model_2.predict(X_test_bat)
 
 # Combine the predictions
 predictions = pd.DataFrame({'YRS': predictions_1, 'AAV': predictions_2})
+# --------------------------------------------------------------------------------------------
+X_train_pitch = starter_free_agents[['AGE', 'YEAR', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'AVG_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
+y_train_pitch = starter_free_agents[['YRS', 'AAV']]
+X_test_pitch = current_starter_agents[['AGE', 'YEAR', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'AVG_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
 
-importance_scores = model_1.feature_importances_
-feature_names = X_train_bat.columns
+conditions = [
+    (X_train_pitch['AGE'] <= 31) & (X_train_pitch['AVG_FIP (2 Yrs)'] <= 4.0) & (X_train_pitch['TOT_IP (2 Yrs)'] >= 250),
+]
+
+weights = [12.5]
+sample_weights = np.select(conditions, weights, default=1.0)
+
+model_3 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
+model_3.fit(X_train_pitch, y_train_pitch['YRS'], sample_weight=sample_weights)
+
+# Make predictions on the test set
+predictions_3 = model_3.predict(X_test_pitch)
+
+conditions = [
+    (X_train_pitch['AVG_FIP (2 Yrs)'] <= 4.0) & (X_train_pitch['TOT_IP (2 Yrs)'] >= 250),
+]
+
+weights = [12.5]
+sample_weights = np.select(conditions, weights, default=1.0)
+
+# Train the model for target_column_2
+model_4 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
+model_4.fit(X_train_pitch, y_train_pitch['AAV'], sample_weight=sample_weights)
+
+# Make predictions on the test set
+predictions_4 = model_4.predict(X_test_pitch)
+
+# Combine the predictions
+predictions = pd.DataFrame({'YRS': predictions_3, 'AAV': predictions_4})
+
+importance_scores = model_3.feature_importances_
+feature_names = X_train_pitch.columns
 feature_importance_dict = dict(zip(feature_names, importance_scores))
 
 # Print feature importance
 for feature, importance in feature_importance_dict.items():
     print(f"{feature}: {importance}")
 
-"""model_3 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
-model_3.fit(X_train_pitch, y_train_pitch['YRS'])
-
-# Make predictions on the test set
-predictions_3 = model_3.predict(X_test_pitch)
-
-# Train the model for target_column_2
-model_4 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.02)
-model_4.fit(X_train_pitch, y_train_pitch['VALUE'])
-
-# Make predictions on the test set
-predictions_4 = model_4.predict(X_test_pitch)
-
-# Combine the predictions
-predictions = pd.DataFrame({'YRS': predictions_3, 'VALUE': predictions_4})"""
-
 for idx, (v1, v2) in enumerate(zip(predictions_1, predictions_2)):
-    print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), round(v2))
+    if(round(v1)) == 0:
+        v1 = 1
+    print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), ' YRS, ', (round((round(v1) * round(v2)) / 1000000)), ' MILLION')
 
-#for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
-#    print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), round(v4))
+for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
+    if(round(v3)) == 0:
+        v1 = 1
+    print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), ' YRS, ', (round((round(v3) * round(v4)) / 1000000)), ' MILLION')
 
 player_names = list(current_free_agents['PLAYER (198)'])
 
