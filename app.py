@@ -419,6 +419,8 @@ importance_scores = model_3.feature_importances_
 feature_names = X_train_pitch.columns
 feature_importance_dict = dict(zip(feature_names, importance_scores))
 
+player_to_contract = {}
+
 # Print feature importance
 for feature, importance in feature_importance_dict.items():
     print(f"{feature}: {importance}")
@@ -426,16 +428,20 @@ for feature, importance in feature_importance_dict.items():
 for idx, (v1, v2) in enumerate(zip(predictions_1, predictions_2)):
     if(round(v1)) == 0:
         v1 = 1
-    print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), ' YRS, ', (round((round(v1) * round(v2)) / 1000000)), ' MILLION')
+    print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), ' YRS, ', (round((round(v1) * round(v2)) / 1000000)), 'MILLION')
+    player_to_contract[current_batter_agents.loc[idx, 'PLAYER (198)']] = [round(v1), 1000000 * (round((round(v1) * round(v2)) / 1000000))]
 
 for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
     if(round(v3)) == 0:
         v1 = 1
-    print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), ' YRS, ', (round((round(v3) * round(v4)) / 1000000)), ' MILLION')
+    print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), 'YRS, ', (round((round(v3) * round(v4)) / 1000000)), 'MILLION')
+    player_to_contract[current_starter_agents.loc[idx, 'PLAYER (198)']] = [round(v3), 1000000 * (round((round(v3) * round(v4)) / 1000000))]
 
 player_names = list(current_free_agents['PLAYER (198)'])
 
-st.title("MLB Free Agent Contract Predictor")
+st.title("MLB Free Agent Contract Projector")
 
 # Player Dropdown for Free Agent
 player = st.selectbox('Select a FA', player_names)
+format_value = f"{player_to_contract[player][1]:,}"
+st.write(str(player_to_contract[player][0]), ' YEAR(S), $', format_value)
