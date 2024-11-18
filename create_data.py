@@ -26,7 +26,6 @@ w1, w2 = 0.25, 0.75
 
 # League average MLB Salary in millions to help adjust for inflation
 lg_avg = {
-    2009: 3,
     2010: 3.01,
     2011: 3.1,
     2012: 3.21,
@@ -45,7 +44,6 @@ lg_avg = {
 
 # Home Run Ratio
 total_hrs = {
-    2009: 5042,
     2010: 4613,
     2011: 4552,
     2012: 4934,
@@ -161,13 +159,13 @@ def calculate_pitching_stats(pitching_stats, player, year):
         avg_K_PER_9 = round((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K/9']) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K/9']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
 
         if player_stats.loc[0, 'BB/9'] > 0 and player_stats.loc[1, 'BB/9'] > 0:
-            avg_K_PER_BB = round(((player_stats.loc[0, 'IP'] * (player_stats.loc[0, 'K/9'] / player_stats.loc[0, 'BB/9'])) + (player_stats.loc[1, 'IP'] * (player_stats.loc[1, 'K/9'] / player_stats.loc[1, 'BB/9']))) / tot_IP, 1)
+            avg_K_PER_BB = round(((w1*(player_stats.loc[0, 'IP'] * (player_stats.loc[0, 'K/9'] / player_stats.loc[0, 'BB/9']))) + (w2*(player_stats.loc[1, 'IP'] * (player_stats.loc[1, 'K/9'] / player_stats.loc[1, 'BB/9'])))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
         else:
             avg_K_PER_BB = round(player_stats.loc[0, 'K/9'] / 9, 1)
 
-        avg_K_MINUS_BB = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K-BB%']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K-BB%'])) / tot_IP, 1)
-        avg_K_RATE = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K%']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K%'])) / tot_IP, 1)
-        avg_SAVES = round(((player_stats.loc[0, 'IP'] * player_stats.loc[0, 'SV']) + (player_stats.loc[1, 'IP'] * player_stats.loc[1, 'SV'])) / tot_IP)
+        avg_K_MINUS_BB = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K-BB%'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K-BB%']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
+        avg_K_RATE = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K%'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K%']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
+        avg_SAVES = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'SV'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'SV']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))))
     
     return pd.Series([tot_GP, tot_GS, tot_IP, tot_PITCHWAR, avg_ERA, avg_SIERA, avg_FIP, avg_PITCHWAR, avg_K_PER_9, avg_K_PER_BB, avg_K_MINUS_BB, avg_K_RATE, avg_SAVES])
 
@@ -188,7 +186,7 @@ previous_free_agents = previous_free_agents[(previous_free_agents['YRS'] > 0) &
                                             (previous_free_agents['TEAMFROM'] != 'JPN') &
                                             (previous_free_agents['TEAMFROM'] != 'KOR') &
                                             (previous_free_agents['TEAMFROM'] != 'CUB') &
-                                            (previous_free_agents['YEAR'] > 2011)]
+                                            (previous_free_agents['YEAR'] >= 2012)]
 previous_free_agents = previous_free_agents.drop(columns=['TEAMFROM'])
 
 previous_free_agents['PLAYER (2000)'] = previous_free_agents['PLAYER (2000)'].astype('string')
@@ -334,11 +332,14 @@ starter_free_agents = starter_free_agents.sample(frac=1, random_state=42).reset_
 current_starter_agents = current_pitcher_agents[current_pitcher_agents['POS'] == 'SP']
 current_starter_agents = current_starter_agents.sample(frac=1, random_state=42).reset_index(drop=True)
 
+reliever_free_agents = pitcher_free_agents[pitcher_free_agents['POS'] == 'RP']
+reliever_free_agents = reliever_free_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+current_reliever_agents = current_pitcher_agents[current_pitcher_agents['POS'] == 'RP']
+current_reliever_agents = current_reliever_agents.sample(frac=1, random_state=42).reset_index(drop=True)
+
 X_train_bat = batter_free_agents[['AGE', 'YEAR', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'AVG_WAR (2 Yrs)']]
 y_train_bat = batter_free_agents[['YRS', 'AAV']]
 X_test_bat = current_batter_agents[['AGE', 'YEAR', 'TOT_PA (2 Yrs)', 'AVG_HR (2 Yrs)', 'AVG_wRC+ (2 Yrs)', 'AVG_OFF (2 Yrs)', 'AVG_DEF (2 Yrs)', 'AVG_WAR (2 Yrs)']]
-
-
 
 conditions = [
     (X_train_bat['AGE'] < 27) & (X_train_bat['AVG_WAR (2 Yrs)'] > 5.0),
@@ -417,15 +418,51 @@ feature_importance_dict = dict(zip(feature_names, importance_scores))
 
 player_to_contract = {}
 
-# Print feature importance
-#for feature, importance in feature_importance_dict.items():
-#    print(f"{feature}: {importance}")
+# --------------------------------------------------------------------------------------------
+X_train_relief = reliever_free_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_IP (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']]
+y_train_relief = reliever_free_agents[['YRS', 'AAV']]
+X_test_relief = current_reliever_agents[['AGE', 'YEAR', 'TOT_GP (2 Yrs)', 'TOT_IP (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K-BB% (2 Yrs)', 'AVG_K% (2 Yrs)', 'AVG_SAVES (2 Yrs)']]
+
+conditions = [
+    (X_train_relief['AVG_FIP (2 Yrs)'] <= 3.0),
+    (X_train_relief['AVG_FIP (2 Yrs)'] <= 3.5),
+    (X_train_relief['AVG_SAVES (2 Yrs)'] >= 20)
+]
+
+weights = [2.5, 1.5, 1.2]
+sample_weights = np.select(conditions, weights, default=1.0)
+
+model_5 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
+model_5.fit(X_train_relief, y_train_relief['YRS'], sample_weight=sample_weights)
+
+# Make predictions on the test set
+predictions_5 = model_5.predict(X_test_relief)
+
+conditions = [
+    (X_train_relief['AVG_FIP (2 Yrs)'] <= 3.0),
+    (X_train_relief['AVG_FIP (2 Yrs)'] <= 3.5),
+]
+
+weights = [2.5, 1.5]
+sample_weights = np.select(conditions, weights, default=1.0)
+
+# Train the model for target_column_2
+model_6 = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=1000, learning_rate=0.1)
+model_6.fit(X_train_relief, y_train_relief['AAV'], sample_weight=sample_weights)
+
+# Make predictions on the test set
+predictions_6 = model_6.predict(X_test_relief)
 
 player_projected_contracts = pd.DataFrame(columns=['PLAYER', 'YRS', 'VALUE'])
 
 for idx, (v1, v2) in enumerate(zip(predictions_1, predictions_2)):
-    if(round(v1)) == 0:
+    if((current_batter_agents.loc[idx, 'AGE'] >= 37 and current_batter_agents.loc[idx, 'AVG_WAR (2 Yrs)'] <= 1.7)):
         v1 = 1
+        v2 *= 0.5
+    
+    if(round(v1) == 0):
+        v1 = 1
+
     #print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), ' YRS, ', (round((round(v1) * round(v2)) / 1000000)), 'MILLION')
     new_row = {"PLAYER": current_batter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v1), "VALUE": 1000000 * (round((round(v1) * round(v2)) / 1000000))}
     player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
@@ -435,6 +472,15 @@ for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
         v3 = 1
     #print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), 'YRS, ', (round((round(v3) * round(v4)) / 1000000)), 'MILLION')
     new_row = {"PLAYER": current_starter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v3), "VALUE": 1000000 * (round((round(v3) * round(v4)) / 1000000))}
+    player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
+
+for idx, (v5, v6) in enumerate(zip(predictions_5, predictions_6)):
+    if(current_reliever_agents.loc[idx, 'TOT_IP (2 Yrs)'] <= 60 or round(v5) == 0):
+        v5 = 1
+        v6 *= 0.5
+
+    #print(current_reliever_agents.loc[idx, 'PLAYER (198)'], round(v5), 'YRS, ', (round((round(v5) * round(v6)) / 1000000)), 'MILLION')
+    new_row = {"PLAYER": current_reliever_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v5), "VALUE": 1000000 * (round((round(v5) * round(v6)) / 1000000))}
     player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
 
 player_projected_contracts.to_sql('fa_contracts', conn, if_exists='replace', index=False)
