@@ -104,7 +104,7 @@ def calculate_batting_stats(batting_stats, player, year):
         avg_WRC_PLUS = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'wRC+'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'wRC+']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))))
         avg_OFF = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Off'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Off']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
         avg_DEF = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'Def'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'Def']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
-        avg_BATWAR = round((w1*((player_stats.loc[0, 'PA'] * player_stats.loc[0, 'WAR'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'WAR']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
+        avg_BATWAR = round(((w1*(player_stats.loc[0, 'PA'] * player_stats.loc[0, 'WAR'])) + (w2*(player_stats.loc[1, 'PA'] * player_stats.loc[1, 'WAR']))) / ((w1*(player_stats.loc[0, 'PA'])) + (w2*(player_stats.loc[1, 'PA']))), 1)
     
     return pd.Series([tot_GP, tot_PA, avg_HR, avg_WRC_PLUS, avg_OFF, avg_DEF, tot_BATWAR, avg_BATWAR])
 
@@ -164,7 +164,7 @@ def calculate_pitching_stats(pitching_stats, player, year):
             avg_K_PER_BB = round(player_stats.loc[0, 'K/9'] / 9, 1)
 
         avg_K_MINUS_BB = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K-BB%'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K-BB%']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
-        avg_K_RATE = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K%'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K%']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 1)
+        avg_K_RATE = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'K%'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'K%']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))), 3)
         avg_SAVES = round(((w1*(player_stats.loc[0, 'IP'] * player_stats.loc[0, 'SV'])) + (w2*(player_stats.loc[1, 'IP'] * player_stats.loc[1, 'SV']))) / ((w1*(player_stats.loc[0, 'IP'])) + (w2*(player_stats.loc[1, 'IP']))))
     
     return pd.Series([tot_GP, tot_GS, tot_IP, tot_PITCHWAR, avg_ERA, avg_SIERA, avg_FIP, avg_PITCHWAR, avg_K_PER_9, avg_K_PER_BB, avg_K_MINUS_BB, avg_K_RATE, avg_SAVES])
@@ -318,9 +318,9 @@ current_pitcher_agents['AVG_SAVES (2 Yrs)'] = current_pitcher_agents['AVG_SAVES 
 #print(previous_free_agents.head(50))
 #print(batter_free_agents.head(50))
 #print(pitcher_free_agents.head(50))
-#print(current_batter_agents.head(50))
+print(current_batter_agents.head(50))
 #print(current_pitcher_agents.head(50))
-#print(current_batter_agents.tail(50))
+print(current_batter_agents.tail(50))
 #print(current_pitcher_agents.tail(50))
 #print(current_batter_agents.head(50))
 
@@ -356,8 +356,6 @@ model_1.fit(X_train_bat, y_train_bat['YRS'], sample_weight=sample_weights)
 # Make predictions on the test set
 predictions_1 = model_1.predict(X_test_bat)
 
-#X_train_bat['AVG_wRC+ (2 Yrs)'] *= 1.1
-
 conditions = [
     (X_train_bat['AVG_WAR (2 Yrs)'] > 5.0),
     (X_train_bat['AVG_DEF (2 Yrs)'] > 7.5) & (X_train_bat['AVG_wRC+ (2 Yrs)'] > 100),
@@ -377,6 +375,13 @@ predictions_2 = model_2.predict(X_test_bat)
 
 # Combine the predictions
 predictions = pd.DataFrame({'YRS': predictions_1, 'AAV': predictions_2})
+
+feature_importance = model_2.get_booster().get_score(importance_type='weight')
+
+# Print feature importance
+#print("Feature Importance (Weight):")
+#for feature, importance in feature_importance.items():
+#    print(f"{feature}: {importance}")
 # --------------------------------------------------------------------------------------------
 X_train_pitch = starter_free_agents[['AGE', 'YEAR', 'TOT_GS (2 Yrs)', 'TOT_IP (2 Yrs)', 'AVG_ERA (2 Yrs)', 'AVG_SIERA (2 Yrs)', 'AVG_FIP (2 Yrs)', 'AVG_WAR (2 Yrs)', 'AVG_K/BB (2 Yrs)']]
 y_train_pitch = starter_free_agents[['YRS', 'AAV']]
@@ -462,16 +467,19 @@ for idx, (v1, v2) in enumerate(zip(predictions_1, predictions_2)):
     
     if(round(v1) == 0):
         v1 = 1
+    
+    if(round(v2) <= 0):
+        v2 = 0.76
 
     #print(current_batter_agents.loc[idx, 'PLAYER (198)'], round(v1), ' YRS, ', (round((round(v1) * round(v2)) / 1000000)), 'MILLION')
-    new_row = {"PLAYER": current_batter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v1), "VALUE": 1000000 * (round((round(v1) * round(v2)) / 1000000))}
+    new_row = {"PLAYER": current_batter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v1), "VALUE": 1000000 * (round((round(v1) * round(v2)) / 1000000)), "POS": current_batter_agents.loc[idx, 'POS']}
     player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
 
 for idx, (v3, v4) in enumerate(zip(predictions_3, predictions_4)):
     if(round(v3)) == 0:
         v3 = 1
     #print(current_starter_agents.loc[idx, 'PLAYER (198)'], round(v3), 'YRS, ', (round((round(v3) * round(v4)) / 1000000)), 'MILLION')
-    new_row = {"PLAYER": current_starter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v3), "VALUE": 1000000 * (round((round(v3) * round(v4)) / 1000000))}
+    new_row = {"PLAYER": current_starter_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v3), "VALUE": 1000000 * (round((round(v3) * round(v4)) / 1000000)), "POS": current_starter_agents.loc[idx, 'POS']}
     player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
 
 for idx, (v5, v6) in enumerate(zip(predictions_5, predictions_6)):
@@ -480,8 +488,16 @@ for idx, (v5, v6) in enumerate(zip(predictions_5, predictions_6)):
         v6 *= 0.5
 
     #print(current_reliever_agents.loc[idx, 'PLAYER (198)'], round(v5), 'YRS, ', (round((round(v5) * round(v6)) / 1000000)), 'MILLION')
-    new_row = {"PLAYER": current_reliever_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v5), "VALUE": 1000000 * (round((round(v5) * round(v6)) / 1000000))}
+    new_row = {"PLAYER": current_reliever_agents.loc[idx, 'PLAYER (198)'], "YRS": round(v5), "VALUE": 1000000 * (round((round(v5) * round(v6)) / 1000000)), "POS": current_reliever_agents.loc[idx, 'POS']}
     player_projected_contracts = pd.concat([player_projected_contracts, pd.DataFrame([new_row])], ignore_index=True)
 
 player_projected_contracts.to_sql('fa_contracts', conn, if_exists='replace', index=False)
+
+current_batter_agents.rename(columns={'PLAYER (198)': 'PLAYER'}, inplace=True)
+current_starter_agents.rename(columns={'PLAYER (198)': 'PLAYER'}, inplace=True)
+current_reliever_agents.rename(columns={'PLAYER (198)': 'PLAYER'}, inplace=True)
+current_batter_agents.to_sql('curr_batters', conn, if_exists='replace', index=False)
+current_starter_agents.to_sql('curr_starters', conn, if_exists='replace', index=False)
+current_reliever_agents.to_sql('curr_relievers', conn, if_exists='replace', index=False)
+
 conn.close()
