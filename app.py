@@ -65,5 +65,5 @@ years, value = cfa_contracts.loc[index, 'YRS'], cfa_contracts.loc[index, 'VALUE'
 format_value = f"{value:,}"
 
 # Write it to screen and close connection
-st.write(str(years), ' YEAR(S), $', format_value)
+st.write('PROJECTED CONTRACT: ', str(years), ' YEAR(S), $', format_value)
 conn.close()
