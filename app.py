@@ -3,7 +3,7 @@ import sqlite3
 import pandas as pd
 
 # Connect to database
-conn = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/fa-contracts.db')
+conn = sqlite3.connect('./db/fa-contracts.db')
 cursor = conn.cursor()
 
 # Select all the player contracts from the newly calculated contracts db

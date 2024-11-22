@@ -5,7 +5,7 @@ import sqlite3
 import xgboost as xgb
 
 # Connect to free agents contract database
-conn = sqlite3.connect('/Users/prithvia05/Desktop/MLBFA_ContractPredictions/db/fa-contracts.db')
+conn = sqlite3.connect('./db/fa-contracts.db')
 conn.cursor()
 
 # Read each of the CSVs of data into individual dataframes
